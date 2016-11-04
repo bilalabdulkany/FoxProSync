@@ -102,8 +102,10 @@ namespace FoxProUpdate
                     {
                         strConLog.Open();
                     }
-                    catch
+                    catch (Exception ex)
                     {
+                        Console.WriteLine("------student dbf exception:" + ex);
+                        MessageBox.Show(ex+"");
                         currentDBn++;
                         continue;
                     }
@@ -116,7 +118,20 @@ namespace FoxProUpdate
                     }
                     Console.WriteLine("row count in " + currentDB + ": " + rowcount);
                     strConLog.Close();
-                    strConLog.Open();
+                    try
+                    {
+                        strConLog.Open();
+                    }
+                    catch (Exception ex)
+                    {
+                        string msg = "-------------exception on table:" + fi.FullName + "--" + ex;
+                        Console.WriteLine(msg);
+                        MessageBox.Show(msg);
+
+                       
+
+                        //continue;
+                    }
                     oComm.CommandText = "select * from " + fi.Name.ToLower().Replace(".dbf", "");
                     oReader = oComm.ExecuteReader();
                     chkFields = true;
@@ -133,15 +148,23 @@ namespace FoxProUpdate
                             }
                             chkFields = false;
                         }
-                        con.Open();
-                        com.CommandText = "select * from " + fi.Name.ToLower().Replace(".dbf", "") + " where key_fld='" + oReader["key_fld"] + "'";
-                        reader = com.ExecuteReader();
-                        hasRows = false;
-                        while (reader.Read())
+                        try
                         {
-                            hasRows = true;
+                            hasRows = false;
+                            con.Open();
+                            com.CommandText = "select * from " + fi.Name.ToLower().Replace(".dbf", "") + " where key_fld='" + oReader["key_fld"] + "'";
+                            reader = com.ExecuteReader();                            
+                            while (reader.Read())
+                            {
+                                hasRows = true;
+                            }
+
+                            con.Close();
                         }
-                        con.Close();
+                        catch (Exception e1) {
+                            Console.WriteLine("ex--" + fi.Name+"  "+e1);
+                        }
+
                         con.Open();
                         if (hasRows)
                         {
@@ -213,7 +236,7 @@ namespace FoxProUpdate
                         Console.WriteLine(ex);
                         currentDBn++;
                         con.Close();
-                        continue;
+                       continue;
                     }
                     while (reader.Read())
                     {
@@ -236,9 +259,14 @@ namespace FoxProUpdate
                     {
                         strConLog.Open();
                     }
-                    catch
+                    catch (Exception ex)
                     {
+                        string msg = "-------------exception on table:" + fi.FullName + "--" + ex;
+                        Console.WriteLine(msg);
+                        MessageBox.Show(msg);
+
                         currentDBn++;
+                        
                         continue;
                     }
 
@@ -395,7 +423,18 @@ namespace FoxProUpdate
                 strConLog.Close();
                 currentDBn++;
             }
-            MessageBox.Show(updateCount + " Rows Updated, " + insertCount + " Rows Inserted");
+            MessageBox.Show(updateCount + " Rows Updated, " + insertCount + " Rows Inserted","Database sync status");
+            string folder = tempExtractedPath.Substring(0, tempExtractedPath.Length - 1);
+            Console.WriteLine(folder);
+            try
+            {
+                DeleteTempDirectory(folder);
+            }
+            catch (Exception e0)
+            {
+                MessageBox.Show(e0 + "");
+            }
+            //File.Delete();
         }
         private void backgroundWorker1_ProgressChanged(object sender, ProgressChangedEventArgs e)
         {
@@ -487,8 +526,8 @@ namespace FoxProUpdate
                     {
                         using (var stream = entry.Open())
                         {
-                            if (entry.FullName.EndsWith(".dbf", StringComparison.OrdinalIgnoreCase))
-                            {
+                           // if (entry.FullName.EndsWith(".dbf", StringComparison.OrdinalIgnoreCase))
+                            //{
                                 fileSize++;
                                 dbffile = entry.FullName.ToString();
                                 dbffile = dbffile.Split('/')[1];
@@ -497,18 +536,39 @@ namespace FoxProUpdate
                                 //Extracting to temp directory..
                                 entry.ExtractToFile(Path.Combine(tempExtractPath, dbffile),true);
 
-                            }
+                            //}
 
                         }
                     }
                     dbfFiles = (FileInfo[])(fileList.ToArray());
                     tempExtractedPath = tempExtractPath;
+                   
                     //new FileInfo[fileSize];
 
 
                 }
             }
             return dbfFiles;
+        }
+
+
+        private void DeleteTempDirectory(string target_dir)
+        {
+            string[] files = Directory.GetFiles(target_dir);
+            string[] dirs = Directory.GetDirectories(target_dir);
+
+            foreach (string file in files)
+            {
+                File.SetAttributes(file, FileAttributes.Normal);
+                File.Delete(file);
+            }
+
+            foreach (string dir in dirs)
+            {
+                DeleteTempDirectory(dir);
+            }
+
+            Directory.Delete(target_dir, false);
         }
     }
 }
