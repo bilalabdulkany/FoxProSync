@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
@@ -19,6 +20,7 @@ namespace FoxProUpdate
         string[] confini;
         string strLogConnectionString;
         String connectionString = "";
+        String tempExtractedPath = "";
         SqlConnection con;
         SqlCommand com;
         SqlDataReader reader;
@@ -70,8 +72,8 @@ namespace FoxProUpdate
             di = new DirectoryInfo(confini[1]);
             Console.WriteLine("Zip file directory: " + confini[6]);
             Console.WriteLine("============================================");
-
-
+            
+          
         }
 
         private void button1_Click(object sender, EventArgs e)
@@ -82,6 +84,7 @@ namespace FoxProUpdate
 
         private void backgroundWorker1_DoWork(object sender, DoWorkEventArgs e)
         {
+            //TODO - Must extract the zip file into a temp location first!
             allFiles = di.GetFiles("*.dbf");
             dbCount = allFiles.Length;
             foreach (FileInfo fi in allFiles)
@@ -199,9 +202,10 @@ namespace FoxProUpdate
                 else
                 {
                     con.Open();
-                    com.CommandText = "select max(key_fld) from " + currentDB;
-                    try
+                     try
                     {
+                        com.CommandText = "select max(key_fld) from " + currentDB;
+                   
                         reader = com.ExecuteReader();
                     }
                     catch (Exception ex)
@@ -439,20 +443,33 @@ namespace FoxProUpdate
 
         private void button2_Click(object sender, EventArgs e)
         {
+            /**
+            * Must get that location to set the directory confini[1]
+            * Then set the first dbf file to the first instance of it.
+            **/
+
+            allFiles = getAllDBFFiles();
+            di = new DirectoryInfo(tempExtractedPath);//confini[1]);
+        }
+
+        private FileInfo[] getAllDBFFiles() {
             di = new DirectoryInfo(confini[6]);
-            allFiles= di.GetFiles("*.zip");
-            //String filesToconvert=allFiles[0].ToString();
-            //Console.WriteLine(filesToconvert.Split('T')[0].ToString().Substring(6));
+            allFiles = di.GetFiles("*.zip");
+            FileInfo[] dbfFiles;
             foreach (FileInfo fi in allFiles)
             {
 
                 Console.WriteLine(fi.FullName.ToString());
             }
-            string path = confini[6].ToString()+allFiles[allFiles.Length-1];
-            Console.WriteLine("--------------------------------------------");           
+            string path = confini[6].ToString() + allFiles[allFiles.Length - 1];
+            Console.WriteLine("--------------------------------------------");
             Console.WriteLine("Chosen Backup file: " + path);
             Console.WriteLine("--------------------------------------------");
-            lblPath.Text=path;
+            string tempExtractPath = confini[6] + "_temp\\";
+            //Create the temp Extract path if it does not exist.
+            System.IO.Directory.CreateDirectory(tempExtractPath);
+            tempExtractedPath = tempExtractPath;
+            lblPath.Text = path;
             string directory = "Lctn";
             {
                 using (var file = File.OpenRead(path))
@@ -464,21 +481,34 @@ namespace FoxProUpdate
                                  select currEntry;
 
                     string dbffile = "";
+                    int fileSize = 0;
+                    List<FileInfo> fileList = new List<FileInfo>();
                     foreach (ZipArchiveEntry entry in result)
                     {
                         using (var stream = entry.Open())
                         {
                             if (entry.FullName.EndsWith(".dbf", StringComparison.OrdinalIgnoreCase))
                             {
+                                fileSize++;
                                 dbffile = entry.FullName.ToString();
                                 dbffile = dbffile.Split('/')[1];
-                                Console.WriteLine(dbffile);
+                                fileList.Add(new FileInfo(dbffile));
+                                Console.WriteLine(dbffile.ToString());
+                                //Extracting to temp directory..
+                                entry.ExtractToFile(Path.Combine(tempExtractPath, dbffile),true);
+
                             }
 
                         }
                     }
+                    dbfFiles = (FileInfo[])(fileList.ToArray());
+                    tempExtractedPath = tempExtractPath;
+                    //new FileInfo[fileSize];
+
+
                 }
             }
+            return dbfFiles;
         }
     }
 }
