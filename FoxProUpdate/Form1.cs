@@ -45,19 +45,15 @@ namespace FoxProUpdate
         public Form1()
         {
             InitializeComponent();
-            outputToFile();
+           outputToFile();
             //System.Globalization.CultureInfo.CurrentCulture.ClearCachedData();
             Console.WriteLine("============================================");
             Console.WriteLine("************* FoxPro Sync ******************");
             Console.WriteLine("        Date: " + DateTime.Now.ToString("dd-MM-yyyy HH:MM:ss tt"));
             Console.WriteLine("============================================");
             Console.WriteLine("Reading configuration file..");
-            confini = File.ReadAllLines("config.ini");
-            strLogConnectionString = @"Provider=vfpoledb;Data Source=" + confini[0] + @";Collating Sequence=machine;Mode=ReadWrite;";
-            strConLog = new OleDbConnection(strLogConnectionString);
+            confini = File.ReadAllLines("config.ini");  
 
-            oComm = new OleDbCommand();
-            oComm.Connection = strConLog;
             Console.WriteLine("Established OleDbConnection..");
             connectionString = System.Configuration.ConfigurationManager.ConnectionStrings["Zahira_SISConnectionString"].ToString();
             con = new SqlConnection(connectionString);
@@ -84,7 +80,8 @@ namespace FoxProUpdate
 
         private void backgroundWorker1_DoWork(object sender, DoWorkEventArgs e)
         {
-            //TODO - Must extract the zip file into a temp location first!
+            //implement thread based synchronization.
+                       
             allFiles = di.GetFiles("*.dbf");
             dbCount = allFiles.Length;
             foreach (FileInfo fi in allFiles)
@@ -94,9 +91,9 @@ namespace FoxProUpdate
                 Console.WriteLine("Parsing table:" + currentDB);
 
 
-                if (fi.Name.ToLower() == "student.dbf")
+                if (/*fi.Name.ToLower() == "student.dbf"||*/ fi.Name.ToLower() == "genlastno.dbf")
                 {
-                    strLogConnectionString = @"Provider=vfpoledb;Data Source=" + fi.FullName + @";Collating Sequence=machine;Mode=ReadWrite;";
+                    strLogConnectionString = getDBFDataString(fi.FullName); //@"Provider=vfpoledb;Data Source=" + fi.FullName + @";Collating Sequence=machine;Mode=ReadWrite;";
                     strConLog.ConnectionString = strLogConnectionString;
                     try
                     {
@@ -127,10 +124,6 @@ namespace FoxProUpdate
                         string msg = "-------------exception on table:" + fi.FullName + "--" + ex;
                         Console.WriteLine(msg);
                         MessageBox.Show(msg);
-
-                       
-
-                        //continue;
                     }
                     oComm.CommandText = "select * from " + fi.Name.ToLower().Replace(".dbf", "");
                     oReader = oComm.ExecuteReader();
@@ -178,15 +171,21 @@ namespace FoxProUpdate
                                 }
                                 else
                                 {
-                                    commandText = commandText + "[" + column + "]='" + oReader[column].ToString().Replace("'", "''") + "',";
+                                    commandText = commandText + "[" + column + "]='" + oReader[column].ToString().Trim().Replace("'", "''") + "',";
                                 }
                             }
-                            commandText = commandText.Substring(0, commandText.Length - 1) + " where key_fld='" + oReader["key_fld"] + "'";
+                            if (fi.Name == "student.dbf")
+                            {
+                                commandText = commandText.Substring(0, commandText.Length - 1).Trim() + " where key_fld='" + oReader["key_fld"] + "'";
+                            }else if (fi.Name == "genlastno.dbf")
+                            {
+                                commandText = commandText.Substring(0, commandText.Length - 1).Trim() + " where groupname='" + oReader["groupname"].ToString().Trim() + "'";
+                            }
                             Console.WriteLine(commandText);
                             com.CommandText = commandText;
                             com.ExecuteNonQuery();
                             updateCount++;
-                        }
+                        }//if condition for student db update.
                         else
                         {
                             commandText = "insert into " + fi.Name.ToLower().Replace(".dbf", "") + " (";
@@ -217,7 +216,11 @@ namespace FoxProUpdate
                         if (rowcount == 0)
                             backgroundWorker1.ReportProgress(100);
                         else
-                            backgroundWorker1.ReportProgress((currentrow * 100) / rowcount);
+                        {
+                            int perc = (currentrow * 100) / rowcount;
+                            if (perc > 100) perc = 100;
+                            backgroundWorker1.ReportProgress(perc);
+                        }
                     }
                     strConLog.Close();
                     currentDBn++;
@@ -253,7 +256,8 @@ namespace FoxProUpdate
                         }
                     }
                     con.Close();
-                    strLogConnectionString = @"Provider=vfpoledb;Data Source=" + fi.FullName + @";Collating Sequence=machine;Mode=ReadWrite;";
+                    strLogConnectionString = getDBFDataString(fi.FullName);//@"Provider=vfpoledb;Data Source=" + fi.FullName + @";Collating Sequence=machine;Mode=ReadWrite;";
+                    Console.WriteLine(strLogConnectionString);
                     strConLog.ConnectionString = strLogConnectionString;
                     try
                     {
@@ -269,7 +273,7 @@ namespace FoxProUpdate
                         
                         continue;
                     }
-
+                    
                     oComm.CommandText = "select count(*) from " + fi.Name.ToLower().Replace(".dbf", "") + " where key_fld>" + maxRow;
                     oReader = oComm.ExecuteReader();
                     while (oReader.Read())
@@ -308,6 +312,7 @@ namespace FoxProUpdate
                             commandText = commandText + "[" + column + "],";
                         }
                         commandText = commandText.Substring(0, commandText.Length - 1) + ") values (";
+                        bool skipTypeCheckForTable = false;
                         foreach (string column in columns)
                         {
 
@@ -319,10 +324,7 @@ namespace FoxProUpdate
                                 {
                                     //boolean found=true;
                                     String colData = "";
-
-
                                     String[] colArray = { "mfees", "topay", "paid" };
-
                                     int updateCount = 0;
                                     //TODO
                                     /**
@@ -343,10 +345,7 @@ namespace FoxProUpdate
                                             try
                                             {
                                                 //Check if the column does not throw exceptions.
-
-
-                                                colReader = oReader[col] + "";
-                                                //Console.WriteLine("-----------: " + colReader);
+                                                colReader = oReader[col] + "";                                            
                                             }
                                             catch (Exception e3)
                                             {
@@ -356,20 +355,19 @@ namespace FoxProUpdate
                                                 {
                                                     colData = colData + col + " = 0,";
                                                     updateCount++;//increment the update count to check how many rows need to get updated.
-
-                                                    //executeExcemptedColumn(oReader["key_fld"].ToString(),column,strConLog);
-                                                    // Console.WriteLine(colData);
+                                                    Console.WriteLine(colData);
                                                     //continue;
                                                 }
                                                 catch (Exception e4)
                                                 {
                                                     Console.WriteLine("exception----" + e4);
-                                                    continue;
+                                                    MessageBox.Show(e4 + "", "Exception occurred");
+                                                  //  continue;
                                                 }
-                                            }
+                                            }//end of try-catch to check col exceptions.
 
-                                        }
-                                    }
+                                        } //end of foreach loop                                   
+                                    }//end of try-catch
 
                                     if (updateCount >= 1)
                                     {
@@ -377,12 +375,18 @@ namespace FoxProUpdate
                                         Console.WriteLine("updating statement:" + colData);
                                         executeExcemptedColumn(oReader["key_fld"].ToString(), colData, strConLog);
                                         updateCount = 0;
+                                        skipTypeCheckForTable = true;
                                     }
-                                }
+                                }//end of if-condition for fee/pay column check..
 
+                            }//check if statement for stumnthhst.dbf
+
+                            if (skipTypeCheckForTable) {
+
+                                commandText = commandText + "'" + 0 + "',";
+                                skipTypeCheckForTable = false;
                             }
-                            // Console.WriteLine("***");
-                            if (oReader[column].GetType() == typeof(DateTime))
+                            else if (oReader[column].GetType() == typeof(DateTime))
                             {
 
                                 commandText = commandText + "'" + String.Format("{0:MM/dd/yy hh:mm:ss tt}", (DateTime)oReader[column]) + "',";
@@ -404,8 +408,9 @@ namespace FoxProUpdate
                             backgroundWorker1.ReportProgress(100);
                         else
                         {
-                            backgroundWorker1.ReportProgress((currentrow * 100) / rowcount);
-
+                            int perc = (currentrow * 100) / rowcount;
+                            if (perc > 100) perc = 100;
+                            backgroundWorker1.ReportProgress(perc);
                         }
 
                         con.Close();
@@ -416,8 +421,9 @@ namespace FoxProUpdate
                         backgroundWorker1.ReportProgress(100);
                     else
                     {
-                        backgroundWorker1.ReportProgress((currentrow * 100) / rowcount);
-
+                        int perc = (currentrow * 100) / rowcount;
+                        if (perc > 100) perc = 100;
+                        backgroundWorker1.ReportProgress(perc);
                     }
                 }
                 strConLog.Close();
@@ -436,22 +442,27 @@ namespace FoxProUpdate
             }
             //File.Delete();
         }
+
         private void backgroundWorker1_ProgressChanged(object sender, ProgressChangedEventArgs e)
         {
             textBox1.Text = currentDB;
             textBox2.Text = e.ProgressPercentage.ToString() + "%";
-            progressBar1.Value = (currentDBn * 100 / dbCount);
+            int perc= (currentDBn * 100 / dbCount);
+            if (perc > 100) perc = 100;
+            progressBar1.Value = perc;
             progressBar2.Value = e.ProgressPercentage;
             lblTables.Text = currentDBn.ToString().Trim() + "/" + dbCount.ToString().Trim();
             lblRecords.Text = currentrow.ToString().Trim() + "/" + rowcount.ToString().Trim();
         }
 
+        /**
+         * handle null data from columns.
+         * 
+         **/
         private void executeExcemptedColumn(String key, String col, OleDbConnection con)
         {
             try
             {
-                //con.Close();
-                //con.Open();   
                 OleDbCommand oCom = new OleDbCommand();
                 oCom.Connection = strConLog;
 
@@ -460,23 +471,32 @@ namespace FoxProUpdate
                 Console.WriteLine(sql);
                 oCom.CommandText = sql;
                 oCom.ExecuteNonQuery();
-
+                
             }
             catch (Exception e)
             {
                 Console.WriteLine("executeExcempt:" + e);
             }
         }
-
+        /**
+         * Log the console output to trace files.
+         * 
+         **/
         private void outputToFile()
         {
-            DateTime today = DateTime.Today;
-            String date = today.ToString("dd-MM-yyyy");
-            FileStream filestream = new FileStream("./trace." + date + ".log", FileMode.Append);
-            var streamwriter = new StreamWriter(filestream);
-            streamwriter.AutoFlush = true;
-            Console.SetOut(streamwriter);
-            Console.SetError(streamwriter);
+            try
+            {
+                DateTime today = DateTime.Today;
+                String date = today.ToString("dd-MM-yyyy");
+                FileStream filestream = new FileStream("./trace-sync." + date + ".log", FileMode.Append);
+                var streamwriter = new StreamWriter(filestream);
+                streamwriter.AutoFlush = true;
+                Console.SetOut(streamwriter);
+                Console.SetError(streamwriter);
+            }
+            catch (Exception e) {
+                Console.WriteLine(e);
+            }
 
         }
 
@@ -491,6 +511,9 @@ namespace FoxProUpdate
             di = new DirectoryInfo(tempExtractedPath);//confini[1]);
         }
 
+        /**
+         * Get all the dbf files and other related tables from the zip files.
+         **/
         private FileInfo[] getAllDBFFiles() {
             di = new DirectoryInfo(confini[6]);
             allFiles = di.GetFiles("*.zip");
@@ -512,7 +535,7 @@ namespace FoxProUpdate
             string directory = "Lctn";
             {
                 using (var file = File.OpenRead(path))
-                using (var zip = new ZipArchive(file, ZipArchiveMode.Read))
+                using ( var zip = new ZipArchive(file, ZipArchiveMode.Read))
                 {
                     var result = from currEntry in zip.Entries
                                  where Path.GetDirectoryName(currEntry.FullName) == directory
@@ -526,8 +549,6 @@ namespace FoxProUpdate
                     {
                         using (var stream = entry.Open())
                         {
-                           // if (entry.FullName.EndsWith(".dbf", StringComparison.OrdinalIgnoreCase))
-                            //{
                                 fileSize++;
                                 dbffile = entry.FullName.ToString();
                                 dbffile = dbffile.Split('/')[1];
@@ -535,23 +556,25 @@ namespace FoxProUpdate
                                 Console.WriteLine(dbffile.ToString());
                                 //Extracting to temp directory..
                                 entry.ExtractToFile(Path.Combine(tempExtractPath, dbffile),true);
-
-                            //}
-
                         }
                     }
                     dbfFiles = (FileInfo[])(fileList.ToArray());
                     tempExtractedPath = tempExtractPath;
-                   
-                    //new FileInfo[fileSize];
 
+                    strLogConnectionString = getDBFDataString(tempExtractedPath + "admissionpay.dbf");//@"Provider =vfpoledb;Data Source=" + tempExtractedPath+ "admissionpay.dbf@;Collating Sequence=machine;Mode=ReadWrite;";
+                    strConLog = new OleDbConnection(strLogConnectionString);
+                 //   strConLog.Open();
+                    oComm = new OleDbCommand();
+                    oComm.Connection = strConLog;
 
                 }
             }
             return dbfFiles;
         }
 
-
+        /**
+         * Delete the temporary directory created.
+         **/
         private void DeleteTempDirectory(string target_dir)
         {
             string[] files = Directory.GetFiles(target_dir);
@@ -569,6 +592,13 @@ namespace FoxProUpdate
             }
 
             Directory.Delete(target_dir, false);
+            Console.WriteLine("** temporary files deleted **");
+        }
+
+        private string getDBFDataString(string filename)
+        {
+            return strLogConnectionString = @"Provider=vfpoledb;Data Source=" + filename + ";Collating Sequence=machine;Mode=ReadWrite;";
         }
     }
+
 }
